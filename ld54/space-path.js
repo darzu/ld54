@@ -2,14 +2,15 @@ import { ENDESGA16 } from "../color/palettes.js";
 import { createLineMesh } from "../debug/gizmos.js";
 import { EM } from "../ecs/entity-manager.js";
 import { tV, vec3 } from "../matrix/sprig-matrix.js";
-import { mergeMeshes, validateMesh, } from "../meshes/mesh.js";
+import { validateMesh, } from "../meshes/mesh.js";
 import { PositionDef } from "../physics/transform.js";
-import { RenderableConstructDef } from "../render/renderer-ecs.js";
+import { RenderableConstructDef, RenderableDef, } from "../render/renderer-ecs.js";
 import { bezierSplineFromPoints, createEvenPathFromBezierSpline, getRandomCylindricalPoints, } from "../utils/spline.js";
 import { orthonormalize, quatFromUpForward } from "../utils/utils-3d.js";
 export const SpacePathDef = EM.defineNonupdatableComponent("spacePath", (path) => ({
     path,
 }));
+export const SpacePathSegmentDef = EM.defineNonupdatableComponent("spacePathSegment", (n) => ({ n }));
 const DEBUG_PATH_POINTS = false;
 export function createSpacePath() {
     // const points: vec3[] = [
@@ -85,14 +86,28 @@ export function createSpacePath() {
         });
         meshes.push(seg);
     }
-    const pathMesh = mergeMeshes(...meshes);
+    meshes.forEach((mesh, i) => {
+        mesh.usesProvoking = true;
+        mesh.surfaceIds = mesh.colors.map((_, i) => i);
+        validateMesh(mesh);
+        const ent = EM.new();
+        console.log("hidden");
+        EM.set(ent, RenderableConstructDef, mesh);
+        EM.whenEntityHas(ent, RenderableDef).then((e) => (e.renderable.hidden = true));
+        EM.set(ent, PositionDef);
+        EM.set(ent, SpacePathSegmentDef, i);
+    });
+    /*
+    const pathMesh = mergeMeshes(...meshes) as Mesh;
     pathMesh.usesProvoking = true;
+  
     pathMesh.surfaceIds = pathMesh.colors.map((_, i) => i);
     validateMesh(pathMesh);
+  */
     // TODO(@darzu): foo
     const ent = EM.new();
-    EM.set(ent, RenderableConstructDef, pathMesh);
-    EM.set(ent, PositionDef);
+    //EM.set(ent, RenderableConstructDef, pathMesh);
+    //EM.set(ent, PositionDef);
     EM.set(ent, SpacePathDef, path);
     return ent;
 }

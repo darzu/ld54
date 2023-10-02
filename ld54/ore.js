@@ -124,9 +124,22 @@ export async function initOre(spacePath) {
         V(spc, 5 + spc, 10 + spc),
         V(-spc, 5 + spc, 10 + spc),
     ];
+    function fuelOreToTravelDist(ore) {
+        return (ore * SHIP_SPEED) / FUEL_CONSUMPTION_RATE;
+    }
+    function oxygenOreToTravelDist(ore) {
+        return (ore * SHIP_SPEED) / OXYGEN_CONSUMPTION_RATE;
+    }
+    function getFuelMargin() {
+        return 0.0;
+    }
+    function getOxygenMargin() {
+        return 0.0;
+    }
     // ore parameters
-    const oxyOreTravelDist = (OXYGEN_PER_ORE * SHIP_SPEED) / OXYGEN_CONSUMPTION_RATE;
-    const fuelOreTravelDist = (FUEL_PER_ORE * SHIP_SPEED) / FUEL_CONSUMPTION_RATE;
+    const oxyOreTravelDist = oxygenOreToTravelDist(OXYGEN_PER_ORE);
+    const fuelOreTravelDist = fuelOreToTravelDist(FUEL_PER_ORE);
+    // console.log(`fuelOreTravelDist: ${fuelOreTravelDist}`);
     const pathDistances = []; // cumulative distance
     {
         // path distances
@@ -141,19 +154,23 @@ export async function initOre(spacePath) {
         }
     }
     const totalDistance = pathDistances.at(-1);
+    console.log(`total path distance: ${totalDistance}`);
     // place fuel
     {
-        let totalFuelTravel = STARTING_FUEL;
+        let numFuelSpawned = 0;
+        let totalFuelTravel = fuelOreToTravelDist(STARTING_FUEL);
         while (totalFuelTravel < totalDistance) {
-            const nextOreStop = totalFuelTravel - fuelOreTravelDist * 0.2;
+            const nextOreStop = totalFuelTravel - fuelOreTravelDist * getFuelMargin();
             const segIdx = pathDistances.findIndex((d) => d > nextOreStop);
             const seg = spacePath[segIdx];
             const randDistFromTrack = randFloat(20, 100);
             const pos = vec3.scale(randNormalVec3(), randDistFromTrack, vec3.create());
             pos[2] = seg.pos[2];
             createFuelOre(pos);
+            numFuelSpawned++;
             totalFuelTravel = nextOreStop + fuelOreTravelDist;
         }
+        console.log(`spawned ${numFuelSpawned} fuel, for ${fuelOreTravelDist * numFuelSpawned} travel`);
         // place starter fuel onboard
         const numStarterFuel = Math.ceil(STARTING_FUEL / FUEL_PER_ORE);
         // console.log(`CREATING ${numStarterFuel} starter fuel`);
@@ -169,9 +186,9 @@ export async function initOre(spacePath) {
     }
     // place oxygen
     {
-        let totalOxygenTravel = STARTING_OXYGEN;
+        let totalOxygenTravel = oxygenOreToTravelDist(STARTING_OXYGEN);
         while (totalOxygenTravel < totalDistance) {
-            const nextOreStop = totalOxygenTravel - oxyOreTravelDist * 0.2;
+            const nextOreStop = totalOxygenTravel - oxyOreTravelDist * getOxygenMargin();
             const segIdx = pathDistances.findIndex((d) => d > nextOreStop);
             const seg = spacePath[segIdx];
             const randDistFromTrack = randFloat(20, 100);

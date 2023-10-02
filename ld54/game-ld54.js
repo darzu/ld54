@@ -4,13 +4,12 @@ import { ColorDef } from "../color/color-ecs.js";
 import { AllEndesga16, ENDESGA16 } from "../color/palettes.js";
 import { EM } from "../ecs/entity-manager.js";
 import { FinishedDef, defineNetEntityHelper } from "../ecs/em-helpers.js";
-import { createGizmoMesh } from "../debug/gizmos.js";
 import { LinearVelocityDef } from "../motion/velocity.js";
-import { PhysicsParentDef, PositionDef, RotationDef, ScaleDef, } from "../physics/transform.js";
+import { PhysicsParentDef, PositionDef, RotationDef, } from "../physics/transform.js";
 import { quat, V, vec3, mat4 } from "../matrix/sprig-matrix.js";
 import { Phase } from "../ecs/sys-phase.js";
 import { XY } from "../meshes/mesh-loader.js";
-import { RenderableConstructDef, RendererDef, RiggedRenderableConstructDef, } from "../render/renderer-ecs.js";
+import { RenderableConstructDef, RenderableDef, RendererDef, RiggedRenderableConstructDef, } from "../render/renderer-ecs.js";
 import { PointLightDef } from "../render/lights.js";
 import { deferredPipeline } from "../render/pipelines/std-deferred.js";
 import { stdRenderPipeline } from "../render/pipelines/std-mesh.js";
@@ -20,7 +19,7 @@ import { shadowPipelines } from "../render/pipelines/std-shadow.js";
 // import { ControllableDef } from "../input/controllable.js";
 import { ColliderDef } from "../physics/collider.js";
 import { TimeDef } from "../time/time.js";
-import { assert } from "../utils/util.js";
+import { assert, dbgLogOnce } from "../utils/util.js";
 import { MeDef } from "../net/components.js";
 import { eventWizard } from "../net/events.js";
 import { initStars, renderStars } from "../render/pipelines/std-stars.js";
@@ -31,7 +30,7 @@ import { PlayerRenderDef } from "./player-render.js";
 import { cloneMesh, scaleMesh3, transformMesh, getAABBFromMesh, } from "../meshes/mesh.js";
 import { stdRiggedRenderPipeline } from "../render/pipelines/std-rigged.js";
 import { PoseDef, repeatPoses } from "../animation/skeletal.js";
-import { createSpacePath } from "./space-path.js";
+import { createSpacePath, SpacePathSegmentDef } from "./space-path.js";
 import { getPathPosRot } from "../utils/spline.js";
 import { PartyDef } from "../camera/party.js";
 import { makeSphere } from "../meshes/primatives.js";
@@ -223,16 +222,16 @@ async function setLevelLocal(levelIdx) {
     const { ld54_meshes } = await EM.whenResources(ld54Meshes);
     // TODO(@darzu): differentiate level based on idx
     // ground
-    const ground = EM.new();
-    EM.set(ground, RenderableConstructDef, ld54_meshes.hex.proto);
-    EM.set(ground, ColorDef, ENDESGA16.blue);
-    EM.set(ground, PositionDef, V(0, -10, 0));
-    EM.set(ground, ScaleDef, V(10, 10, 10));
-    EM.set(ground, ColliderDef, {
-        shape: "AABB",
-        solid: true,
-        aabb: ld54_meshes.hex.aabb,
-    });
+    // const ground = EM.new();
+    // EM.set(ground, RenderableConstructDef, ld54_meshes.hex.proto);
+    // EM.set(ground, ColorDef, ENDESGA16.blue);
+    // EM.set(ground, PositionDef, V(0, -10, 0));
+    // EM.set(ground, ScaleDef, V(10, 10, 10));
+    // EM.set(ground, ColliderDef, {
+    //   shape: "AABB",
+    //   solid: true,
+    //   aabb: ld54_meshes.hex.aabb,
+    // });
 }
 export async function initLD54() {
     EM.addEagerInit([], [RendererDef], [], (res) => {
@@ -245,6 +244,7 @@ export async function initLD54() {
             if (localStorage.getItem("useHighGraphics")) {
                 useHighGraphics = true;
                 graphicsCheckbox.checked = true;
+                res.renderer.renderer.highGraphics = true;
             }
             graphicsCheckbox.onchange = (e) => {
                 // console.log(graphicsCheckbox.checked);
@@ -316,12 +316,12 @@ export async function initLD54() {
     vec3.copy(sun.pointLight.ambient, [0.2, 0.2, 0.2]);
     vec3.copy(sun.pointLight.diffuse, [0.5, 0.5, 0.5]);
     EM.set(sun, PositionDef, V(50, 300, 10));
-    // gizmo
-    const gizmoMesh = createGizmoMesh();
-    const gizmo = EM.new();
-    EM.set(gizmo, RenderableConstructDef, gizmoMesh);
-    EM.set(gizmo, PositionDef, V(0, 1, 0));
-    EM.set(gizmo, ScaleDef, V(2, 2, 2));
+    // // gizmo
+    // const gizmoMesh = createGizmoMesh();
+    // const gizmo = EM.new();
+    // EM.set(gizmo, RenderableConstructDef, gizmoMesh);
+    // EM.set(gizmo, PositionDef, V(0, 1, 0));
+    // EM.set(gizmo, ScaleDef, V(2, 2, 2));
     // space path
     const spacePath = createSpacePath();
     const numPathSeg = spacePath.spacePath.path.length - 1;
@@ -337,9 +337,24 @@ export async function initLD54() {
             if (res.ld54GameState.fuel > 0) {
                 raft.raftLocal.t += res.time.dt;
             }
+            const SEG_LEN = 5;
             const seconds = raft.raftLocal.t * 0.001;
-            const raftSpeed_segPerSecond = SHIP_SPEED / (5 / 1000);
+            const raftSpeed_segPerSecond = SHIP_SPEED / (SEG_LEN / 1000);
             const t = (seconds * raftSpeed_segPerSecond) % numPathSeg;
+            if (res.ld54GameState.fuel <= 0) {
+                // TODO(@darzu): DBG. out of fuel at 30 w/ starting fuel 100.
+                // TODO(@darzu): DBG. out of fuel at 18 w/ starting fuel 60.
+                dbgLogOnce(`travel-${t}`, `OUT OF FUEL AT: ${t}, dist: ${t * SEG_LEN}`);
+            }
+            const pathSegs = EM.filterEntities([
+                SpacePathSegmentDef,
+                RenderableDef,
+            ]);
+            for (let pathSeg of pathSegs) {
+                if (pathSeg.spacePathSegment.n < t / 2 + 10) {
+                    pathSeg.renderable.hidden = false;
+                }
+            }
             getPathPosRot(spacePath.spacePath.path, t, raft.position, raft.rotation);
             // quat.rotateY(raft.rotation, Math.PI / 2, raft.rotation);
             // const t = res.time.time * 0.001;

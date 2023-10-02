@@ -6,6 +6,7 @@ export const SoundPaths = [
     "cannonL.mp3",
     "stonebreak.wav",
     "woodbreak.mp3",
+    "sword.mp3",
 ];
 export const SoundSetDef = EM.defineResource("soundSet", (soundSet) => soundSet);
 async function loadSoundsData() {

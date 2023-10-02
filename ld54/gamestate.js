@@ -10,7 +10,7 @@ import { SpacePathDef } from "./space-path.js";
 export const BubbleDef = EM.defineNonupdatableComponent("bubble", () => true);
 export const BreathingPlayerDef = EM.defineNonupdatableComponent("breathingPlayer", () => true);
 export const STARTING_OXYGEN = 100;
-export const STARTING_FUEL = 100;
+export const STARTING_FUEL = 60;
 // amount of oxygen / cubic meter
 const OXYGEN_DENSITY = 0.001;
 // oxygen consumed per ms
