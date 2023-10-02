@@ -39,6 +39,7 @@ export function createRenderer(canvas, device, context, shaders) {
     const renderer = {
         drawLines: true,
         drawTris: true,
+        highGraphics: false,
         // std mesh
         // addMeshInstance,
         // TODO(@darzu): need sub-mesh updateMesh variant (e.g. coloring a few quads)

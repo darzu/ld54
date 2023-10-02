@@ -5,6 +5,7 @@ import { quat, vec3 } from "../matrix/sprig-matrix.js";
 import { LinearVelocityDef } from "../motion/velocity.js";
 import { RotationDef } from "../physics/transform.js";
 import { TimeDef } from "../time/time.js";
+import { SWORD_SWING_DURATION } from "./gamestate.js";
 export const SpaceSuitDef = EM.defineComponent("spaceSuit", () => ({
     // TODO(@darzu): data
     speed: 0.00003,
@@ -12,6 +13,8 @@ export const SpaceSuitDef = EM.defineComponent("spaceSuit", () => ({
     rollSpeed: 0.01,
     doDampen: true,
     localAccel: vec3.create(),
+    swingingSword: false,
+    swordSwingT: 0,
 }));
 EM.addEagerInit([SpaceSuitDef], [], [], () => {
     // TODO(@darzu): init
@@ -57,6 +60,17 @@ EM.addEagerInit([SpaceSuitDef], [], [], () => {
             if (res.inputs.keyDowns["e"])
                 rollSpeed = -1;
             quat.rotateZ(e.rotation, rollSpeed * e.spaceSuit.rollSpeed, e.rotation);
+            // sword
+            if (e.spaceSuit.swingingSword) {
+                e.spaceSuit.swordSwingT += res.time.dt;
+                if (e.spaceSuit.swordSwingT >= SWORD_SWING_DURATION) {
+                    e.spaceSuit.swingingSword = false;
+                }
+            }
+            if (res.inputs.lclick) {
+                e.spaceSuit.swingingSword = true;
+                e.spaceSuit.swordSwingT = 0;
+            }
         }
     });
 });

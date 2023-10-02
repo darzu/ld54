@@ -14,7 +14,8 @@ import { RenderableConstructDef, RenderableDef, } from "../render/renderer-ecs.j
 import { randFloat, sphereRadiusFromVolume, sphereVolumeFromRadius, } from "../utils/math.js";
 import { assert } from "../utils/util.js";
 import { randNormalVec3, randQuat } from "../utils/utils-3d.js";
-import { LD54GameStateDef, FUEL_PER_ORE, OXYGEN_PER_ORE, FUEL_CONSUMPTION_RATE, SHIP_SPEED, OXYGEN_CONSUMPTION_RATE, STARTING_FUEL, STARTING_OXYGEN, } from "./gamestate.js";
+import { LD54GameStateDef, FUEL_PER_ORE, OXYGEN_PER_ORE, FUEL_CONSUMPTION_RATE, SHIP_SPEED, OXYGEN_CONSUMPTION_RATE, STARTING_FUEL, STARTING_OXYGEN, SWORD_SWING_DURATION, } from "./gamestate.js";
+import { SpaceSuitDef } from "./space-suit-controller.js";
 let _t1 = vec3.create();
 let _t2 = quat.create();
 function createFuelOreMesh() {
@@ -81,8 +82,9 @@ export const OreDef = EM.defineComponent("ore", () => ({
     carried: false,
     type: "fuel",
 }));
-export const OreCarrierDef = EM.defineComponent("oreCarrier", () => ({
+export const OreCarrierDef = EM.defineNonupdatableComponent("oreCarrier", (colliderId) => ({
     carrying: undefined,
+    colliderId: colliderId ?? 0,
 }));
 export const OreStoreDef = EM.defineComponent("oreStore", () => ({
     fuelOres: [],
@@ -190,13 +192,13 @@ export async function initOre(spacePath) {
             });
         }
     }
-    EM.addSystem("interactWithOre", Phase.GAME_PLAYERS, [OreCarrierDef, PositionDef], [PhysicsResultsDef, LD54GameStateDef], (es, res) => {
+    EM.addSystem("interactWithOre", Phase.GAME_PLAYERS, [OreCarrierDef, PositionDef, SpaceSuitDef], [PhysicsResultsDef, LD54GameStateDef], (es, res) => {
         if (!es.length)
             return;
         assert(es.length === 1);
         const carrier = es[0];
         // collisions?
-        const otherIds = res.physicsResults.collidesWith.get(carrier.id);
+        const otherIds = res.physicsResults.collidesWith.get(carrier.oreCarrier.colliderId);
         if (!otherIds)
             return;
         if (carrier.oreCarrier.carrying) {
@@ -247,13 +249,17 @@ export async function initOre(spacePath) {
                 .filter((e) => e !== undefined && !e.ore.carried);
             if (!ores.length)
                 return; // didn't reach any new ore
-            // transfer to carrier
-            const ore = ores[0];
-            carrier.oreCarrier.carrying = ore;
-            ore.ore.carried = true;
-            vec3.zero(ore.angularVelocity); // stop spinning
-            EM.set(ore, PhysicsParentDef, carrier.id);
-            vec3.set(0, 0, -5, ore.position);
+            // only collect if we are swingin
+            if (carrier.spaceSuit.swingingSword &&
+                carrier.spaceSuit.swordSwingT > 0.7 * SWORD_SWING_DURATION) {
+                // transfer to carrier
+                const ore = ores[0];
+                carrier.oreCarrier.carrying = ore;
+                ore.ore.carried = true;
+                vec3.zero(ore.angularVelocity); // stop spinning
+                EM.set(ore, PhysicsParentDef, carrier.id);
+                vec3.set(0, 0, -5, ore.position);
+            }
         }
     });
     const oreFullVolume = sphereVolumeFromRadius(1);

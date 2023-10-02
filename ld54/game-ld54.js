@@ -7,7 +7,7 @@ import { FinishedDef, defineNetEntityHelper } from "../ecs/em-helpers.js";
 import { createGizmoMesh } from "../debug/gizmos.js";
 import { LinearVelocityDef } from "../motion/velocity.js";
 import { PhysicsParentDef, PositionDef, RotationDef, ScaleDef, } from "../physics/transform.js";
-import { quat, V, vec3 } from "../matrix/sprig-matrix.js";
+import { quat, V, vec3, mat4 } from "../matrix/sprig-matrix.js";
 import { Phase } from "../ecs/sys-phase.js";
 import { XY } from "../meshes/mesh-loader.js";
 import { RenderableConstructDef, RendererDef, RiggedRenderableConstructDef, } from "../render/renderer-ecs.js";
@@ -23,11 +23,12 @@ import { TimeDef } from "../time/time.js";
 import { assert } from "../utils/util.js";
 import { MeDef } from "../net/components.js";
 import { eventWizard } from "../net/events.js";
-import { initStars } from "../render/pipelines/std-stars.js";
+import { initStars, renderStars } from "../render/pipelines/std-stars.js";
 import { noisePipes } from "../render/pipelines/std-noise.js";
+import { blurPipelines } from "../render/pipelines/std-blur.js";
 import { SpaceSuitDef } from "./space-suit-controller.js";
 import { PlayerRenderDef } from "./player-render.js";
-import { getAABBFromMesh } from "../meshes/mesh.js";
+import { cloneMesh, scaleMesh3, transformMesh, getAABBFromMesh, } from "../meshes/mesh.js";
 import { stdRiggedRenderPipeline } from "../render/pipelines/std-rigged.js";
 import { PoseDef, repeatPoses } from "../animation/skeletal.js";
 import { createSpacePath } from "./space-path.js";
@@ -40,6 +41,7 @@ import { BubbleDef, LD54GameStateDef, BreathingPlayerDef, SHIP_SPEED, } from "./
 import { OreCarrierDef, OreStoreDef, initOre } from "./ore.js";
 import { createSpaceBarge } from "./barge.js";
 import { TextDef } from "../gui/ui.js";
+import { aabbCenter, createAABB, getHalfsizeFromAABB, } from "../physics/aabb.js";
 const RENDER_TRUTH_CUBE = false;
 const ld54Meshes = XY.defineMeshSetResource("ld54_meshes", CubeMesh, HexMesh, BallMesh, CubeRaftMesh, LD54AstronautMesh);
 const { PlayerLocalDef, PlayerPropsDef, createPlayer, createPlayerNow, createPlayerAsync, } = defineNetEntityHelper({
@@ -111,7 +113,29 @@ const { PlayerLocalDef, PlayerPropsDef, createPlayer, createPlayerNow, createPla
             vec3.copy(e.cameraFollow.positionOffset, [0.0, 0.0, 10.0]);
             // e.cameraFollow.yawOffset = 0.0;
             // e.cameraFollow.pitchOffset = -0.593;
-            EM.set(e, OreCarrierDef);
+            // sword hitbox
+            const hitbox = EM.new();
+            const S = 3;
+            EM.set(hitbox, PositionDef, V(0, 0, -S));
+            EM.set(hitbox, ColliderDef, {
+                shape: "AABB",
+                solid: false,
+                aabb: createAABB(V(-S, -2 * S, -S), V(S, 2 * S, S)),
+            });
+            function debugVizAABB(aabbEnt) {
+                // debug render floor
+                const mesh = cloneMesh(res.ld54_meshes.cube.mesh);
+                assert(aabbEnt.collider.shape === "AABB");
+                const size = getHalfsizeFromAABB(aabbEnt.collider.aabb, vec3.create());
+                const center = aabbCenter(vec3.tmp(), aabbEnt.collider.aabb);
+                scaleMesh3(mesh, size);
+                transformMesh(mesh, mat4.fromTranslation(center));
+                EM.set(aabbEnt, RenderableConstructDef, mesh);
+                EM.set(aabbEnt, ColorDef, ENDESGA16.orange);
+            }
+            //debugVizAABB(hitbox);
+            EM.set(hitbox, PhysicsParentDef, e.id);
+            EM.set(e, OreCarrierDef, hitbox.id);
             const playerRender = EM.new();
             const riggedAstronaut = res.ld54_meshes.ld54_astronaut.mesh;
             EM.set(playerRender, RiggedRenderableConstructDef, riggedAstronaut);
@@ -214,22 +238,47 @@ export async function initLD54() {
     EM.addEagerInit([], [RendererDef], [], (res) => {
         // init stars
         res.renderer.renderer.submitPipelines([], [...noisePipes, initStars]);
-        // renderer
-        res.renderer.pipelines = [
-            ...shadowPipelines,
-            // skyPipeline,
-            stdRenderPipeline,
-            stdRiggedRenderPipeline,
-            bubblePipeline,
-            // renderGrassPipe,
-            // renderOceanPipe,
-            outlineRender,
-            deferredPipeline,
-            // renderStars,
-            // ...blurPipelines,
-            // skyPipeline,
-            postProcess,
-        ];
+        // graphics settings
+        let useHighGraphics = false;
+        const graphicsCheckbox = document.getElementById("graphics-check");
+        if (graphicsCheckbox) {
+            graphicsCheckbox.onchange = (e) => {
+                // console.log(graphicsCheckbox.checked);
+                // console.dir(e);
+                useHighGraphics = graphicsCheckbox.checked;
+                setRenderPipelines(useHighGraphics);
+                res.renderer.renderer.highGraphics = useHighGraphics;
+            };
+        }
+        else {
+            console.error("No graphics checkbox!");
+        }
+        setRenderPipelines(useHighGraphics);
+        function setRenderPipelines(high) {
+            if (high) {
+                res.renderer.pipelines = [
+                    ...shadowPipelines,
+                    stdRenderPipeline,
+                    stdRiggedRenderPipeline,
+                    bubblePipeline,
+                    outlineRender,
+                    deferredPipeline,
+                    renderStars,
+                    ...blurPipelines,
+                    postProcess,
+                ];
+            }
+            else {
+                res.renderer.pipelines = [
+                    stdRenderPipeline,
+                    stdRiggedRenderPipeline,
+                    bubblePipeline,
+                    outlineRender,
+                    deferredPipeline,
+                    postProcess,
+                ];
+            }
+        }
     });
     const { camera, me } = await EM.whenResources(CameraDef, MeDef);
     // start level

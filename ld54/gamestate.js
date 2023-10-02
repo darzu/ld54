@@ -21,6 +21,7 @@ export const FUEL_PER_ORE = 60;
 const STARTING_PLAYER_OXYGEN = 20;
 // per ms
 export const SHIP_SPEED = 5 / 1000;
+export const SWORD_SWING_DURATION = 800;
 var GameStatus;
 (function (GameStatus) {
     GameStatus[GameStatus["Playing"] = 0] = "Playing";

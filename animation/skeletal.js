@@ -46,7 +46,6 @@ export function repeatPoses(e, ...poses) {
 // clear out any queued animations, including repeats
 export function clearAnimationQueue(e) {
     e.pose.queue = [];
-    e.pose.repeat = [];
 }
 // add a pose to the queue, to be executed after any current
 // animations (but before any repeat)
