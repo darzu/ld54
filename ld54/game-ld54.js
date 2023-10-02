@@ -386,6 +386,6 @@ export async function initLD54() {
     quat.copy(player.rotation, [0.01, -0.96, -0.21, 0.16]);
     EM.set(player, BreathingPlayerDef);
     const res = await EM.whenResources(TextDef);
-    res.text.lowerText = `controls: wasd, q/e rotate, space/c up/down, mouse camera`;
+    res.text.lowerText = `controls: wasd, q/e rotate, space/c up/down, click to pickup`;
 }
 //# sourceMappingURL=game-ld54.js.map
