@@ -359,6 +359,6 @@ function displayWebGPUError() {
       color: green;
       margin: 24px;
       max-width: 600px;`;
-    document.getElementsByTagName("body")[0].innerHTML = `<div style="${style}">This page requires WebGPU which isn't yet supported in your browser!<br>Or something else went wrong that was my fault.<br><br>U can try Chrome >113.<br><br>🙂</div>`;
+    document.getElementsByTagName("body")[0].innerHTML = `<div style="${style}">This page requires WebGPU which isn't yet supported in your browser!<br>Or something else went wrong that was my fault.<br><br>Probably Chrome on Windows will work.<br><br>🙂</div>`;
 }
 //# sourceMappingURL=renderer-ecs.js.map

@@ -16,6 +16,7 @@ import { ColliderDef } from "../physics/collider.js";
 import { AngularVelocityDef, LinearVelocityDef } from "../motion/velocity.js";
 import { PhysicsResultsDef, WorldFrameDef, } from "../physics/nonintersection.js";
 import { PhysicsParentDef, PositionDef, RotationDef, ScaleDef, } from "../physics/transform.js";
+import { createEmptyMesh } from "../meshes/mesh.js";
 import { RenderableConstructDef, RenderableDef, RendererDef, } from "../render/renderer-ecs.js";
 import { mat4, V, vec3, quat } from "../matrix/sprig-matrix.js";
 import { TimeDef } from "../time/time.js";
@@ -25,43 +26,41 @@ import { Phase } from "../ecs/sys-phase.js";
 import { XY } from "../meshes/mesh-loader.js";
 const GRAVITY = 6.0 * 0.00001;
 const MIN_BRICK_PERCENT = 0.6;
-export const StoneTowerDef = EM.defineNonupdatableComponent("stoneTower", (cannon, fireRate = 1500, projectileSpeed = 0.2, firingRadius = Math.PI / 8) => ({
-    rows: [],
-    mesh: {
-        pos: [],
-        colors: [],
-        quad: [],
-        tri: [],
-        surfaceIds: [],
-        usesProvoking: true,
-        dbgName: "tower",
-    },
+function createEmptyStoneState() {
+    return {
+        mesh: createEmptyMesh("tower"),
+        rows: [],
+        totalBricks: 0,
+        currentBricks: 0,
+        aabb: createAABB(),
+    };
+}
+export const StoneTowerDef = EM.defineNonupdatableComponent("stoneTower", (cannon, stone, fireRate = 1500, projectileSpeed = 0.2, firingRadius = Math.PI / 8) => ({
+    stone,
     cannon: createRef(cannon),
     lastFired: 0,
     fireRate,
     projectileSpeed,
     firingRadius,
-    totalBricks: 0,
-    currentBricks: 0,
     alive: true,
 }));
-function knockOutBrickAtIndex(tower, index) {
+function knockOutBrickAtIndex(stone, index) {
     for (let i = 0; i < 8; i++) {
-        vec3.set(0, 0, 0, tower.mesh.pos[index + i]);
+        vec3.set(0, 0, 0, stone.mesh.pos[index + i]);
     }
 }
 let towardsAttractorTmp = vec3.tmp();
 let testAABBTmp = vec3.tmp();
-function shrinkBrickAtIndex(tower, baseIndex, aabb) {
+function shrinkBrickAtIndex(stone, baseIndex, aabb) {
     // is right face entirely outside AABB?
     const rightFace = [0, 2, 4, 6];
     const leftFace = [1, 3, 5, 7];
     let face;
-    if (rightFace.every((index) => !pointInAABB(aabb, tower.mesh.pos[baseIndex + index]))) {
+    if (rightFace.every((index) => !pointInAABB(aabb, stone.mesh.pos[baseIndex + index]))) {
         //console.log(`right face out of AABB at index ${baseIndex}`);
         face = rightFace;
     }
-    else if (leftFace.every((index) => !pointInAABB(aabb, tower.mesh.pos[baseIndex + index]))) {
+    else if (leftFace.every((index) => !pointInAABB(aabb, stone.mesh.pos[baseIndex + index]))) {
         //console.log(`left face out of AABB at index ${baseIndex}`);
         face = leftFace;
     }
@@ -72,8 +71,8 @@ function shrinkBrickAtIndex(tower, baseIndex, aabb) {
     for (let index of face) {
         // each point can attract a point across from it along x
         let attractedIndex = index % 2 === 0 ? index + 1 : index - 1;
-        let attractor = tower.mesh.pos[baseIndex + index];
-        let attracted = tower.mesh.pos[baseIndex + attractedIndex];
+        let attractor = stone.mesh.pos[baseIndex + index];
+        let attracted = stone.mesh.pos[baseIndex + attractedIndex];
         if (pointInAABB(aabb, attractor)) {
             console.log("should never happen");
         }
@@ -105,20 +104,20 @@ function shrinkBrickAtIndex(tower, baseIndex, aabb) {
     return true;
 }
 // takes a tower-space AABB--not world space!
-function knockOutBricks(tower, aabb, shrink = false) {
+function knockOutBricks(stone, aabb, shrink = false) {
     let bricksKnockedOut = 0;
-    for (let row of tower.rows) {
+    for (let row of stone.rows) {
         if (doesOverlapAABB(row.aabb, aabb)) {
             for (let brick of row.bricks) {
                 if (doesOverlapAABB(brick.aabb, aabb)) {
                     if (shrink) {
-                        if (!shrinkBrickAtIndex(tower, brick.index, aabb)) {
+                        if (!shrinkBrickAtIndex(stone, brick.index, aabb)) {
                             row.totalBricks--;
-                            knockOutBrickAtIndex(tower, brick.index);
+                            knockOutBrickAtIndex(stone, brick.index);
                         }
                     }
                     else {
-                        knockOutBrickAtIndex(tower, brick.index);
+                        knockOutBrickAtIndex(stone, brick.index);
                         if (!brick.knockedOut) {
                             brick.knockedOut = true;
                             bricksKnockedOut++;
@@ -135,7 +134,7 @@ function knockOutBricks(tower, aabb, shrink = false) {
 function knockOutBricksByBullet(tower, aabb, bullet) {
     // [bricks knocked out, updated health]
     let bricksKnockedOut = 0;
-    for (let row of tower.stoneTower.rows) {
+    for (let row of tower.stoneTower.stone.rows) {
         if (doesOverlapAABB(row.aabb, aabb)) {
             for (let brick of row.bricks) {
                 if (bullet.health <= 0) {
@@ -147,7 +146,7 @@ function knockOutBricksByBullet(tower, aabb, bullet) {
                     brick.health -= dmg;
                     if (brick.health <= 0) {
                         row.bricksKnockedOut++;
-                        knockOutBrickAtIndex(tower.stoneTower, brick.index);
+                        knockOutBrickAtIndex(tower.stoneTower.stone, brick.index);
                         brick.knockedOut = true;
                         bricksKnockedOut++;
                         flyingBrickPool.spawn().then((flyingBrick) => {
@@ -167,7 +166,7 @@ function restoreBrick(tower, brick) {
     brick.health = startingBrickHealth;
     if (brick.knockedOut) {
         for (let i = 0; i < 8; i++) {
-            vec3.copy(tower.mesh.pos[brick.index + i], brick.pos[i]);
+            vec3.copy(tower.stone.mesh.pos[brick.index + i], brick.pos[i]);
         }
         brick.knockedOut = false;
         return true;
@@ -176,7 +175,7 @@ function restoreBrick(tower, brick) {
 }
 function restoreAllBricks(tower) {
     let bricksRestored = 0;
-    for (let row of tower.rows) {
+    for (let row of tower.stone.rows) {
         row.bricksKnockedOut = 0;
         for (let brick of row.bricks) {
             if (restoreBrick(tower, brick)) {
@@ -201,6 +200,117 @@ export function calculateNAndBrickWidth(radius, approxBrickWidth) {
 }
 const baseColor = ENDESGA16.lightGray;
 const TowerMeshes = XY.defineMeshSetResource("towerMeshes", LD53CannonMesh, CubeMesh);
+function createTowerState() {
+    const state = createEmptyStoneState();
+    const mesh = state.mesh;
+    const rows = Math.floor(height / approxBrickHeight);
+    const brickHeight = height / rows;
+    const cursor = mat4.create();
+    function applyCursor(v, distort = false) {
+        vec3.transformMat4(v, cursor, v);
+        if (distort)
+            vec3.add(v, [
+                jitter(approxBrickWidth / 10),
+                jitter(brickHeight / 10),
+                jitter(brickDepth / 10),
+            ], v);
+        return v;
+    }
+    function appendBrick(brickWidth, brickDepth) {
+        const index = mesh.pos.length;
+        const aabb = createAABB();
+        // base
+        const pos = [];
+        function addPos(p) {
+            pos.push(vec3.clone(p));
+            mesh.pos.push(p);
+            updateAABBWithPoint(aabb, p);
+        }
+        addPos(applyCursor(V(0, 0, 0)));
+        addPos(applyCursor(V(0 + brickWidth, 0, 0)));
+        addPos(applyCursor(V(0, 0, 0 + brickDepth), true));
+        addPos(applyCursor(V(0 + brickWidth, 0, 0 + brickDepth), true));
+        //top
+        addPos(applyCursor(V(0, 0 + brickHeight, 0)));
+        addPos(applyCursor(V(0 + brickWidth, 0 + brickHeight, 0)));
+        addPos(applyCursor(V(0, 0 + brickHeight, 0 + brickDepth), true));
+        addPos(applyCursor(V(0 + brickWidth, 0 + brickHeight, 0 + brickDepth), true));
+        // base
+        mesh.quad.push(V(index, index + 1, index + 3, index + 2));
+        // top
+        mesh.quad.push(V(index + 4, index + 2 + 4, index + 3 + 4, index + 1 + 4));
+        // sides
+        mesh.quad.push(V(index, index + 4, index + 1 + 4, index + 1));
+        mesh.quad.push(V(index, index + 2, index + 2 + 4, index + 4));
+        mesh.quad.push(V(index + 2, index + 3, index + 3 + 4, index + 2 + 4));
+        mesh.quad.push(V(index + 1, index + 1 + 4, index + 3 + 4, index + 3));
+        //
+        const brightness = Math.random() * 0.05;
+        const color = V(brightness, brightness, brightness);
+        vec3.add(color, baseColor, color);
+        for (let i = 0; i < 6; i++) {
+            mesh.colors.push(color);
+        }
+        return {
+            aabb,
+            index,
+            knockedOut: false,
+            health: startingBrickHealth,
+            pos,
+            color,
+        };
+    }
+    let rotation = 0;
+    let towerAABB = createAABB();
+    let totalBricks = 0;
+    for (let r = 0; r < rows; r++) {
+        const row = {
+            aabb: createAABB(),
+            bricks: [],
+            totalBricks: 0,
+            bricksKnockedOut: 0,
+        };
+        state.rows.push(row);
+        const radius = baseRadius * (1 - r / (rows * 2));
+        const [n, brickWidth] = calculateNAndBrickWidth(radius, approxBrickWidth);
+        const angle = (2 * Math.PI) / n;
+        mat4.identity(cursor);
+        mat4.translate(cursor, [0, r * brickHeight, 0], cursor);
+        rotation += angle / 2;
+        rotation += jitter(angle / 4);
+        mat4.rotateY(cursor, rotation, cursor);
+        mat4.translate(cursor, [0, 0, radius], cursor);
+        mat4.rotateY(cursor, coolMode ? -angle / 2 : angle / 2, cursor);
+        for (let i = 0; i < n; i++) {
+            totalBricks++;
+            row.totalBricks++;
+            const brick = appendBrick(brickWidth, brickDepth + jitter(brickDepth / 10));
+            mergeAABBs(row.aabb, row.aabb, brick.aabb);
+            row.bricks.push(brick);
+            if (coolMode) {
+                mat4.rotateY(cursor, angle, cursor);
+                mat4.translate(cursor, [brickWidth, 0, 0], cursor);
+            }
+            else {
+                mat4.translate(cursor, [brickWidth, 0, 0], cursor);
+                mat4.rotateY(cursor, angle, cursor);
+            }
+        }
+        mergeAABBs(towerAABB, towerAABB, row.aabb);
+    }
+    //mesh.quad.forEach(() => mesh.colors.push(V(0, 0, 0)));
+    mesh.quad.forEach((_, i) => mesh.surfaceIds.push(i + 1));
+    const windowHeight = 0.7 * height;
+    const windowAABB = {
+        min: V(baseRadius - 4 * brickDepth, windowHeight - 2 * brickHeight, -approxBrickWidth),
+        max: V(baseRadius + 2 * brickDepth, windowHeight + 2 * brickHeight, approxBrickWidth),
+    };
+    knockOutBricks(state, windowAABB, true);
+    state.totalBricks = totalBricks;
+    state.currentBricks = totalBricks;
+    state.aabb = towerAABB;
+    return state;
+}
 export const towerPool = createEntityPool({
     max: maxStoneTowers,
     maxBehavior: "crash",
@@ -215,121 +325,16 @@ export const towerPool = createEntityPool({
         EM.set(cannon, PhysicsParentDef, tower.id);
         EM.set(cannon, WorldFrameDef);
         vec3.set(baseRadius - 2, height * 0.7, 0, cannon.position);
-        EM.set(tower, StoneTowerDef, cannon);
+        const stone = createTowerState();
+        EM.set(tower, StoneTowerDef, cannon, stone);
         EM.set(tower, PositionDef);
         EM.set(tower, RotationDef);
-        const mesh = tower.stoneTower.mesh;
-        const rows = Math.floor(height / approxBrickHeight);
-        const brickHeight = height / rows;
-        const cursor = mat4.create();
-        function applyCursor(v, distort = false) {
-            vec3.transformMat4(v, cursor, v);
-            if (distort)
-                vec3.add(v, [
-                    jitter(approxBrickWidth / 10),
-                    jitter(brickHeight / 10),
-                    jitter(brickDepth / 10),
-                ], v);
-            return v;
-        }
-        function appendBrick(brickWidth, brickDepth) {
-            const index = mesh.pos.length;
-            const aabb = createAABB();
-            // base
-            const pos = [];
-            function addPos(p) {
-                pos.push(vec3.clone(p));
-                mesh.pos.push(p);
-                updateAABBWithPoint(aabb, p);
-            }
-            addPos(applyCursor(V(0, 0, 0)));
-            addPos(applyCursor(V(0 + brickWidth, 0, 0)));
-            addPos(applyCursor(V(0, 0, 0 + brickDepth), true));
-            addPos(applyCursor(V(0 + brickWidth, 0, 0 + brickDepth), true));
-            //top
-            addPos(applyCursor(V(0, 0 + brickHeight, 0)));
-            addPos(applyCursor(V(0 + brickWidth, 0 + brickHeight, 0)));
-            addPos(applyCursor(V(0, 0 + brickHeight, 0 + brickDepth), true));
-            addPos(applyCursor(V(0 + brickWidth, 0 + brickHeight, 0 + brickDepth), true));
-            // base
-            mesh.quad.push(V(index, index + 1, index + 3, index + 2));
-            // top
-            mesh.quad.push(V(index + 4, index + 2 + 4, index + 3 + 4, index + 1 + 4));
-            // sides
-            mesh.quad.push(V(index, index + 4, index + 1 + 4, index + 1));
-            mesh.quad.push(V(index, index + 2, index + 2 + 4, index + 4));
-            mesh.quad.push(V(index + 2, index + 3, index + 3 + 4, index + 2 + 4));
-            mesh.quad.push(V(index + 1, index + 1 + 4, index + 3 + 4, index + 3));
-            //
-            const brightness = Math.random() * 0.05;
-            const color = V(brightness, brightness, brightness);
-            vec3.add(color, baseColor, color);
-            for (let i = 0; i < 6; i++) {
-                mesh.colors.push(color);
-            }
-            return {
-                aabb,
-                index,
-                knockedOut: false,
-                health: startingBrickHealth,
-                pos,
-                color,
-            };
-        }
-        let rotation = 0;
-        let towerAABB = createAABB();
-        let totalBricks = 0;
-        for (let r = 0; r < rows; r++) {
-            const row = {
-                aabb: createAABB(),
-                bricks: [],
-                totalBricks: 0,
-                bricksKnockedOut: 0,
-            };
-            tower.stoneTower.rows.push(row);
-            const radius = baseRadius * (1 - r / (rows * 2));
-            const [n, brickWidth] = calculateNAndBrickWidth(radius, approxBrickWidth);
-            const angle = (2 * Math.PI) / n;
-            mat4.identity(cursor);
-            mat4.translate(cursor, [0, r * brickHeight, 0], cursor);
-            rotation += angle / 2;
-            rotation += jitter(angle / 4);
-            mat4.rotateY(cursor, rotation, cursor);
-            mat4.translate(cursor, [0, 0, radius], cursor);
-            mat4.rotateY(cursor, coolMode ? -angle / 2 : angle / 2, cursor);
-            for (let i = 0; i < n; i++) {
-                totalBricks++;
-                row.totalBricks++;
-                const brick = appendBrick(brickWidth, brickDepth + jitter(brickDepth / 10));
-                mergeAABBs(row.aabb, row.aabb, brick.aabb);
-                row.bricks.push(brick);
-                if (coolMode) {
-                    mat4.rotateY(cursor, angle, cursor);
-                    mat4.translate(cursor, [brickWidth, 0, 0], cursor);
-                }
-                else {
-                    mat4.translate(cursor, [brickWidth, 0, 0], cursor);
-                    mat4.rotateY(cursor, angle, cursor);
-                }
-            }
-            mergeAABBs(towerAABB, towerAABB, row.aabb);
-        }
-        //mesh.quad.forEach(() => mesh.colors.push(V(0, 0, 0)));
-        mesh.quad.forEach((_, i) => mesh.surfaceIds.push(i + 1));
-        const windowHeight = 0.7 * height;
-        const windowAABB = {
-            min: V(baseRadius - 4 * brickDepth, windowHeight - 2 * brickHeight, -approxBrickWidth),
-            max: V(baseRadius + 2 * brickDepth, windowHeight + 2 * brickHeight, approxBrickWidth),
-        };
-        knockOutBricks(tower.stoneTower, windowAABB, true);
         EM.set(tower, ColliderDef, {
             shape: "AABB",
             solid: false,
-            aabb: towerAABB,
+            aabb: stone.aabb,
         });
-        EM.set(tower, RenderableConstructDef, mesh);
-        tower.stoneTower.totalBricks = totalBricks;
-        tower.stoneTower.currentBricks = totalBricks;
+        EM.set(tower, RenderableConstructDef, tower.stoneTower.stone.mesh);
         return tower;
     },
     onSpawn: async (p) => {
@@ -347,9 +352,9 @@ export const towerPool = createEntityPool({
             const res = await EM.whenResources(RendererDef);
             const meshHandle = (await EM.whenEntityHas(p, RenderableDef)).renderable
                 .meshHandle;
-            res.renderer.renderer.stdPool.updateMeshVertices(meshHandle, p.stoneTower.mesh);
+            res.renderer.renderer.stdPool.updateMeshVertices(meshHandle, p.stoneTower.stone.mesh);
         }
-        p.stoneTower.currentBricks = p.stoneTower.totalBricks;
+        p.stoneTower.stone.currentBricks = p.stoneTower.stone.totalBricks;
         p.stoneTower.alive = true;
     },
     onDespawn: (e) => {
@@ -591,12 +596,12 @@ function destroyTower(tower) {
     let i = 0;
     while (knockedOut < maxFlyingBricks / 2 && i < 200) {
         i++;
-        const rowIndex = Math.floor(Math.random() * tower.stoneTower.rows.length);
-        const brickIndex = Math.floor(Math.random() * tower.stoneTower.rows[rowIndex].bricks.length);
-        const brick = tower.stoneTower.rows[rowIndex].bricks[brickIndex];
+        const rowIndex = Math.floor(Math.random() * tower.stoneTower.stone.rows.length);
+        const brickIndex = Math.floor(Math.random() * tower.stoneTower.stone.rows[rowIndex].bricks.length);
+        const brick = tower.stoneTower.stone.rows[rowIndex].bricks[brickIndex];
         if (!brick.knockedOut) {
             knockedOut++;
-            knockOutBrickAtIndex(tower.stoneTower, brick.index);
+            knockOutBrickAtIndex(tower.stoneTower.stone, brick.index);
             brick.knockedOut = true;
             flyingBrickPool.spawn().then((flyingBrick) => {
                 flyingBrick.physicsParent.id = tower.id;
@@ -636,19 +641,20 @@ EM.addSystem("stoneTowerDamage", Phase.GAME_WORLD, [StoneTowerDef, RenderableDef
                 EM.whenResources(AudioDef, SoundSetDef).then((res) => {
                     res.music.playSound("stonebreak", res.soundSet["stonebreak.wav"], 0.1);
                 });
-                tower.stoneTower.currentBricks -= totalKnockedOut;
-                if (tower.stoneTower.currentBricks / tower.stoneTower.totalBricks <
+                tower.stoneTower.stone.currentBricks -= totalKnockedOut;
+                if (tower.stoneTower.stone.currentBricks /
+                    tower.stoneTower.stone.totalBricks <
                     MIN_BRICK_PERCENT) {
                     destroyTower(tower);
                 }
                 else {
-                    for (let row of tower.stoneTower.rows) {
+                    for (let row of tower.stoneTower.stone.rows) {
                         if (row.bricksKnockedOut === row.totalBricks) {
                             destroyTower(tower);
                         }
                     }
                 }
-                res.renderer.renderer.stdPool.updateMeshVertices(tower.renderable.meshHandle, tower.stoneTower.mesh);
+                res.renderer.renderer.stdPool.updateMeshVertices(tower.renderable.meshHandle, tower.stoneTower.stone.mesh);
             }
         }
     }

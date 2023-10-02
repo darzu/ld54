@@ -359,6 +359,16 @@ export function normalizeMesh(inM) {
         surfaceIds: outM.surfaceIds ?? generateSurfaceIds(outM),
     };
 }
+export function createEmptyRawMesh(dbgName) {
+    let mesh = {
+        dbgName,
+        pos: [],
+        tri: [],
+        quad: [],
+        colors: [],
+    };
+    return mesh;
+}
 export function createEmptyMesh(dbgName) {
     let mesh = {
         dbgName,
@@ -366,6 +376,8 @@ export function createEmptyMesh(dbgName) {
         tri: [],
         quad: [],
         colors: [],
+        surfaceIds: [],
+        usesProvoking: true,
     };
     return mesh;
 }

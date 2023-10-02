@@ -1,7 +1,7 @@
 import { ENDESGA16 } from "../color/palettes.js";
 import { mat4, quat, vec3 } from "../matrix/sprig-matrix.js";
 import { V } from "../matrix/sprig-matrix.js";
-import { createEmptyMesh, transformMesh, validateMesh, } from "../meshes/mesh.js";
+import { createEmptyRawMesh, transformMesh, validateMesh, } from "../meshes/mesh.js";
 import { createAABB, updateAABBWithPoint, getSizeFromAABB, } from "../physics/aabb.js";
 import { translatePath, createPathFromBezier, mirrorPath, clonePath, reverseBezier, createEvenPathFromBezierCurve, translatePathAlongNormal, } from "../utils/spline.js";
 import { assert } from "../utils/util.js";
@@ -126,7 +126,7 @@ const keelTemplate = {
 };
 export function createSpaceBarge() {
     const _start = performance.now();
-    const _timberMesh = createEmptyMesh("homeShip");
+    const _timberMesh = createEmptyRawMesh("homeShip");
     const builder = createTimberBuilder(_timberMesh);
     // KEEL
     // TODO(@darzu): IMPL keel!
