@@ -242,12 +242,20 @@ export async function initLD54() {
         let useHighGraphics = false;
         const graphicsCheckbox = document.getElementById("graphics-check");
         if (graphicsCheckbox) {
+            if (localStorage.getItem("useHighGraphics")) {
+                useHighGraphics = true;
+                graphicsCheckbox.checked = true;
+            }
             graphicsCheckbox.onchange = (e) => {
                 // console.log(graphicsCheckbox.checked);
                 // console.dir(e);
                 useHighGraphics = graphicsCheckbox.checked;
                 setRenderPipelines(useHighGraphics);
                 res.renderer.renderer.highGraphics = useHighGraphics;
+                if (useHighGraphics)
+                    localStorage.setItem("useHighGraphics", "true");
+                else
+                    localStorage.removeItem("useHighGraphics");
             };
         }
         else {
@@ -275,6 +283,7 @@ export async function initLD54() {
                     bubblePipeline,
                     outlineRender,
                     deferredPipeline,
+                    renderStars,
                     postProcess,
                 ];
             }
